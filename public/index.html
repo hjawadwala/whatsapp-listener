@@ -437,17 +437,73 @@
                 <p>All message endpoints require a Bearer token in the Authorization header:</p>
                 <pre>Authorization: Bearer YOUR_TOKEN_HERE</pre>
 
-                <h3>📤 Endpoints</h3>
+                <h3>📤 Unified Endpoint</h3>
 
                 <div class="endpoint">
                     <span class="method method-post">POST</span>
-                    <code>/api/messages/text</code>
-                    <h4>Send Text Message</h4>
+                    <code>/api/messages/send</code>
+                    <h4>Send Any Message Type</h4>
+                    <p><strong>Single endpoint for all message types (text, image, video, document)</strong></p>
+                    
+                    <p><strong>Common Parameters:</strong></p>
+                    <ul style="margin-left: 20px;">
+                        <li><code>to</code> - Recipient's WhatsApp number (required)</li>
+                        <li><code>type</code> - Message type: <code>text</code>, <code>image</code>, <code>video</code>, <code>document</code> (required)</li>
+                        <li><code>message</code> - Text content for text messages, or caption for media (optional for media)</li>
+                    </ul>
+
+                    <h4 style="margin-top: 15px;">Send Text Message</h4>
                     <p><strong>Request:</strong></p>
                     <pre>{
   "to": "919876543210",
+  "type": "text",
   "message": "Hello World!"
 }</pre>
+
+                    <h4 style="margin-top: 15px;">Send Image Message</h4>
+                    <p><strong>Request:</strong></p>
+                    <pre>{
+  "to": "919876543210",
+  "type": "image",
+  "mediaUrl": "https://example.com/photo.jpg",
+  "message": "Check this photo!"
+}</pre>
+                    <p><strong>Parameters:</strong></p>
+                    <ul style="margin-left: 20px;">
+                        <li><code>mediaUrl</code> - Image URL or local path (required)</li>
+                        <li><code>message</code> - Image caption (optional)</li>
+                    </ul>
+
+                    <h4 style="margin-top: 15px;">Send Video Message</h4>
+                    <p><strong>Request:</strong></p>
+                    <pre>{
+  "to": "919876543210",
+  "type": "video",
+  "mediaUrl": "https://example.com/video.mp4",
+  "message": "Watch this!"
+}</pre>
+                    <p><strong>Parameters:</strong></p>
+                    <ul style="margin-left: 20px;">
+                        <li><code>mediaUrl</code> - Video URL or local path (required)</li>
+                        <li><code>message</code> - Video caption (optional)</li>
+                    </ul>
+
+                    <h4 style="margin-top: 15px;">Send Document Message</h4>
+                    <p><strong>Request:</strong></p>
+                    <pre>{
+  "to": "919876543210",
+  "type": "document",
+  "mediaUrl": "https://example.com/file.pdf",
+  "fileName": "my-document.pdf",
+  "message": "Here's your document"
+}</pre>
+                    <p><strong>Parameters:</strong></p>
+                    <ul style="margin-left: 20px;">
+                        <li><code>mediaUrl</code> - Document URL or local path (required)</li>
+                        <li><code>fileName</code> - Custom filename (optional, auto-detected from URL/path)</li>
+                        <li><code>message</code> - Document caption (optional)</li>
+                    </ul>
+
                     <p><strong>Response:</strong></p>
                     <pre>{
   "success": true,
@@ -455,73 +511,39 @@
 }</pre>
                 </div>
 
-                <div class="endpoint">
-                    <span class="method method-post">POST</span>
-                    <code>/api/messages/image</code>
-                    <h4>Send Image Message</h4>
-                    <p><strong>Request:</strong></p>
-                    <pre>{
-  "to": "919876543210",
-  "imageUrl": "https://example.com/photo.jpg",
-  "caption": "Check this photo!"
-}</pre>
-                    <p><strong>Parameters:</strong></p>
-                    <ul style="margin-left: 20px;">
-                        <li><code>to</code> - Phone number (required)</li>
-                        <li><code>imageUrl</code> - Image URL or local path (required)</li>
-                        <li><code>caption</code> - Image caption (optional)</li>
-                    </ul>
-                </div>
-
-                <div class="endpoint">
-                    <span class="method method-post">POST</span>
-                    <code>/api/messages/video</code>
-                    <h4>Send Video Message</h4>
-                    <p><strong>Request:</strong></p>
-                    <pre>{
-  "to": "919876543210",
-  "videoUrl": "https://example.com/video.mp4",
-  "caption": "Watch this!"
-}</pre>
-                    <p><strong>Parameters:</strong></p>
-                    <ul style="margin-left: 20px;">
-                        <li><code>to</code> - Phone number (required)</li>
-                        <li><code>videoUrl</code> - Video URL or local path (required)</li>
-                        <li><code>caption</code> - Video caption (optional)</li>
-                    </ul>
-                </div>
-
-                <div class="endpoint">
-                    <div class="method-post">POST</div>
-                    <code>/api/messages/document</code>
-                    <p>Send a document (PDF, DOC, TXT, etc.)</p>
-                    <strong>Request Body:</strong>
-                    <ul style="margin-left: 20px;">
-                        <li><code>to</code> - Recipient's WhatsApp number (required)</li>
-                        <li><code>documentUrl</code> - URL or local path to document (required)</li>
-                        <li><code>fileName</code> - Custom filename (optional, auto-detected from URL/path)</li>
-                        <li><code>caption</code> - Document caption (optional)</li>
-                    </ul>
-                </div>
-
                 <h3>💡 Usage Examples</h3>
 
                 <h4>JavaScript / Node.js</h4>
                 <pre>const token = 'YOUR_TOKEN_HERE';
 
-async function sendMessage(to, message) {
-  const response = await fetch('http://localhost:3000/api/messages/text', {
+// Send text message
+async function sendTextMessage(to, message) {
+  const response = await fetch('http://localhost:3000/api/messages/send', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
-    body: JSON.stringify({ to, message })
+    body: JSON.stringify({ to, type: 'text', message })
   });
   return response.json();
 }
 
-await sendMessage('919876543210', 'Hello!');</pre>
+// Send image with caption
+async function sendImage(to, mediaUrl, caption) {
+  const response = await fetch('http://localhost:3000/api/messages/send', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ to, type: 'image', mediaUrl, message: caption })
+  });
+  return response.json();
+}
+
+await sendTextMessage('919876543210', 'Hello!');
+await sendImage('919876543210', 'https://example.com/photo.jpg', 'Check this!');</pre>
 
                 <h4>Python</h4>
                 <pre>import requests
@@ -532,18 +554,56 @@ headers = {
     'Content-Type': 'application/json'
 }
 
+# Send text message
 response = requests.post(
-    'http://localhost:3000/api/messages/text',
+    'http://localhost:3000/api/messages/send',
     headers=headers,
-    json={'to': '919876543210', 'message': 'Hello!'}
+    json={'to': '919876543210', 'type': 'text', 'message': 'Hello!'}
+)
+print(response.json())
+
+# Send image with caption
+response = requests.post(
+    'http://localhost:3000/api/messages/send',
+    headers=headers,
+    json={
+        'to': '919876543210',
+        'type': 'image',
+        'mediaUrl': 'https://example.com/photo.jpg',
+        'message': 'Check this out!'
+    }
 )
 print(response.json())</pre>
 
                 <h4>cURL</h4>
-                <pre>curl -X POST http://localhost:3000/api/messages/text \
+                <pre># Send text message
+curl -X POST http://localhost:3000/api/messages/send \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -d '{"to": "919876543210", "message": "Hello!"}'</pre>
+  -d '{"to": "919876543210", "type": "text", "message": "Hello!"}'
+
+# Send image with caption
+curl -X POST http://localhost:3000/api/messages/send \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -d '{
+    "to": "919876543210",
+    "type": "image",
+    "mediaUrl": "https://example.com/photo.jpg",
+    "message": "Check this!"
+  }'
+
+# Send document
+curl -X POST http://localhost:3000/api/messages/send \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -d '{
+    "to": "919876543210",
+    "type": "document",
+    "mediaUrl": "https://example.com/file.pdf",
+    "fileName": "report.pdf",
+    "message": "Here is the report"
+  }'</pre>
 
                 <h3>📋 Phone Number Format</h3>
                 <p>Always use country code + phone number (no + or spaces)</p>

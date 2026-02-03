@@ -479,15 +479,27 @@ app.delete('/api/sessions/:sessionId', async (req, res) => {
     }
 });
 
-// Message sending endpoints
-app.post('/api/messages/text', validateToken, async (req, res) => {
+// Unified message sending endpoint
+app.post('/api/messages/send', validateToken, async (req, res) => {
     try {
-        const { to, message } = req.body;
+        const { to, type = 'text', message, mediaUrl, fileName } = req.body;
         const sessionId = req.sessionId;
         const session = req.session;
 
-        if (!to || !message) {
-            return res.status(400).json({ success: false, error: 'Missing "to" or "message" field' });
+        if (!to) {
+            return res.status(400).json({ success: false, error: 'Missing "to" field' });
+        }
+
+        if (!type || !['text', 'image', 'video', 'document'].includes(type)) {
+            return res.status(400).json({ success: false, error: 'Invalid or missing "type" field. Supported: text, image, video, document' });
+        }
+
+        if (type === 'text' && !message) {
+            return res.status(400).json({ success: false, error: 'Missing "message" field for text type' });
+        }
+
+        if (['image', 'video', 'document'].includes(type) && !mediaUrl) {
+            return res.status(400).json({ success: false, error: `Missing "mediaUrl" field for ${type} type` });
         }
 
         // Normalize phone number to WhatsApp format
@@ -499,97 +511,74 @@ app.post('/api/messages/text', validateToken, async (req, res) => {
             return res.status(400).json({ success: false, error: 'Socket not connected' });
         }
 
-        const result = await sock.sendMessage(jid, { text: message });
-
+        let result;
         const auditLog = {
             timestamp: new Date().toISOString(),
             sessionId,
-            messageId: result.key?.id,
             to,
-            type: 'text',
-            status: 'sent',
-            messageLength: message.length
+            type,
+            status: 'sent'
         };
 
-        storeSentMessage(auditLog);
-        console.log(`[${sessionId}] Text message sent to ${to}:`, message);
-
-        res.json({ success: true, messageId: result.key?.id });
-    } catch (err) {
-        console.error('Failed to send text message:', err);
-        const auditLog = {
-            timestamp: new Date().toISOString(),
-            sessionId: req.sessionId,
-            to: req.body.to,
-            type: 'text',
-            status: 'failed',
-            error: String(err?.message || err)
-        };
-        storeSentMessage(auditLog);
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-
-app.post('/api/messages/image', validateToken, async (req, res) => {
-    try {
-        const { to, imageUrl, caption } = req.body;
-        const sessionId = req.sessionId;
-        const session = req.session;
-
-        if (!to || !imageUrl) {
-            return res.status(400).json({ success: false, error: 'Missing "to" or "imageUrl" field' });
-        }
-
-        // Normalize phone number to WhatsApp format
-        const normalizedTo = String(to).replace(/\D/g, '');
-        const jid = `${normalizedTo}@s.whatsapp.net`;
-
-        const sock = session.sock;
-        if (!sock) {
-            return res.status(400).json({ success: false, error: 'Socket not connected' });
-        }
-
-        // Fetch image from URL or local path
-        let imageData;
         try {
-            if (imageUrl.startsWith('http')) {
-                const response = await fetch(imageUrl);
-                const arrayBuffer = await response.arrayBuffer();
-                imageData = Buffer.from(arrayBuffer);
-            } else {
-                imageData = fs.readFileSync(imageUrl);
+            if (type === 'text') {
+                result = await sock.sendMessage(jid, { text: message });
+                auditLog.messageLength = message.length;
+                console.log(`[${sessionId}] Text message sent to ${to}:`, message);
+            } else if (type === 'image') {
+                const imageData = await fetchMediaData(mediaUrl);
+                result = await sock.sendMessage(jid, {
+                    image: imageData,
+                    caption: message || ''
+                });
+                auditLog.mediaUrl = mediaUrl;
+                auditLog.caption = message || '';
+                console.log(`[${sessionId}] Image message sent to ${to}`);
+            } else if (type === 'video') {
+                const videoData = await fetchMediaData(mediaUrl);
+                result = await sock.sendMessage(jid, {
+                    video: videoData,
+                    caption: message || '',
+                    mimetype: 'video/mp4'
+                });
+                auditLog.mediaUrl = mediaUrl;
+                auditLog.caption = message || '';
+                console.log(`[${sessionId}] Video message sent to ${to}`);
+            } else if (type === 'document') {
+                const documentData = await fetchMediaData(mediaUrl);
+                let detectedFileName = fileName;
+                if (!detectedFileName) {
+                    if (mediaUrl.startsWith('http')) {
+                        detectedFileName = mediaUrl.split('/').pop().split('?')[0] || 'document';
+                    } else {
+                        detectedFileName = path.basename(mediaUrl);
+                    }
+                }
+                result = await sock.sendMessage(jid, {
+                    document: documentData,
+                    fileName: detectedFileName,
+                    caption: message || '',
+                    mimetype: 'application/octet-stream'
+                });
+                auditLog.mediaUrl = mediaUrl;
+                auditLog.fileName = detectedFileName;
+                auditLog.caption = message || '';
+                console.log(`[${sessionId}] Document message sent to ${to}`);
             }
-        } catch (err) {
-            return res.status(400).json({ success: false, error: `Failed to fetch image: ${err.message}` });
+
+            auditLog.messageId = result.key?.id;
+            storeSentMessage(auditLog);
+            res.json({ success: true, messageId: result.key?.id });
+        } catch (mediaErr) {
+            throw new Error(`Failed to process media: ${mediaErr.message}`);
         }
-
-        const result = await sock.sendMessage(jid, {
-            image: imageData,
-            caption: caption || ''
-        });
-
-        const auditLog = {
-            timestamp: new Date().toISOString(),
-            sessionId,
-            messageId: result.key?.id,
-            to,
-            type: 'image',
-            status: 'sent',
-            imageUrl,
-            caption: caption || ''
-        };
-
-        storeSentMessage(auditLog);
-        console.log(`[${sessionId}] Image message sent to ${to}`);
-
-        res.json({ success: true, messageId: result.key?.id });
     } catch (err) {
-        console.error('Failed to send image message:', err);
+        console.error('Failed to send message:', err);
         const auditLog = {
             timestamp: new Date().toISOString(),
             sessionId: req.sessionId,
             to: req.body.to,
-            type: 'image',
+            type: req.body.type || 'unknown',
             status: 'failed',
             error: String(err?.message || err)
         };
@@ -598,149 +587,19 @@ app.post('/api/messages/image', validateToken, async (req, res) => {
     }
 });
 
-app.post('/api/messages/video', validateToken, async (req, res) => {
-    try {
-        const { to, videoUrl, caption } = req.body;
-        const sessionId = req.sessionId;
-        const session = req.session;
-
-        if (!to || !videoUrl) {
-            return res.status(400).json({ success: false, error: 'Missing "to" or "videoUrl" field' });
+// Helper function to fetch media data from URL or local path
+async function fetchMediaData(mediaUrl) {
+    if (mediaUrl.startsWith('http')) {
+        const response = await fetch(mediaUrl);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch media from URL: ${response.status}`);
         }
-
-        // Normalize phone number to WhatsApp format
-        const normalizedTo = String(to).replace(/\D/g, '');
-        const jid = `${normalizedTo}@s.whatsapp.net`;
-
-        const sock = session.sock;
-        if (!sock) {
-            return res.status(400).json({ success: false, error: 'Socket not connected' });
-        }
-
-        // Fetch video from URL or local path
-        let videoData;
-        try {
-            if (videoUrl.startsWith('http')) {
-                const response = await fetch(videoUrl);
-                const arrayBuffer = await response.arrayBuffer();
-                videoData = Buffer.from(arrayBuffer);
-            } else {
-                videoData = fs.readFileSync(videoUrl);
-            }
-        } catch (err) {
-            return res.status(400).json({ success: false, error: `Failed to fetch video: ${err.message}` });
-        }
-
-        const result = await sock.sendMessage(jid, {
-            video: videoData,
-            caption: caption || '',
-            mimetype: 'video/mp4'
-        });
-
-        const auditLog = {
-            timestamp: new Date().toISOString(),
-            sessionId,
-            messageId: result.key?.id,
-            to,
-            type: 'video',
-            status: 'sent',
-            videoUrl,
-            caption: caption || ''
-        };
-
-        storeSentMessage(auditLog);
-        console.log(`[${sessionId}] Video message sent to ${to}`);
-
-        res.json({ success: true, messageId: result.key?.id });
-    } catch (err) {
-        console.error('Failed to send video message:', err);
-        const auditLog = {
-            timestamp: new Date().toISOString(),
-            sessionId: req.sessionId,
-            to: req.body.to,
-            type: 'video',
-            status: 'failed',
-            error: String(err?.message || err)
-        };
-        storeSentMessage(auditLog);
-        res.status(500).json({ success: false, error: err.message });
+        const arrayBuffer = await response.arrayBuffer();
+        return Buffer.from(arrayBuffer);
+    } else {
+        return fs.readFileSync(mediaUrl);
     }
-});
-
-app.post('/api/messages/document', validateToken, async (req, res) => {
-    try {
-        const { to, documentUrl, fileName, caption } = req.body;
-        const sessionId = req.sessionId;
-        const session = req.session;
-
-        if (!to || !documentUrl) {
-            return res.status(400).json({ success: false, error: 'Missing "to" or "documentUrl" field' });
-        }
-
-        // Normalize phone number to WhatsApp format
-        const normalizedTo = String(to).replace(/\D/g, '');
-        const jid = `${normalizedTo}@s.whatsapp.net`;
-
-        const sock = session.sock;
-        if (!sock) {
-            return res.status(400).json({ success: false, error: 'Socket not connected' });
-        }
-
-        // Fetch document from URL or local path
-        let documentData;
-        let detectedFileName;
-        try {
-            if (documentUrl.startsWith('http')) {
-                const response = await fetch(documentUrl);
-                const arrayBuffer = await response.arrayBuffer();
-                documentData = Buffer.from(arrayBuffer);
-                // Extract filename from URL if not provided
-                detectedFileName = fileName || documentUrl.split('/').pop().split('?')[0] || 'document';
-            } else {
-                documentData = fs.readFileSync(documentUrl);
-                detectedFileName = fileName || path.basename(documentUrl);
-            }
-        } catch (err) {
-            return res.status(400).json({ success: false, error: `Failed to fetch document: ${err.message}` });
-        }
-
-        const result = await sock.sendMessage(jid, {
-            document: documentData,
-            fileName: detectedFileName,
-            caption: caption || '',
-            mimetype: 'application/octet-stream'
-        });
-
-        const auditLog = {
-            timestamp: new Date().toISOString(),
-            sessionId,
-            messageId: result.key?.id,
-            to,
-            type: 'document',
-            status: 'sent',
-            documentUrl,
-            fileName: detectedFileName,
-            caption: caption || ''
-        };
-
-        storeSentMessage(auditLog);
-        console.log(`[${sessionId}] Document message sent to ${to}`);
-
-        res.json({ success: true, messageId: result.key?.id });
-    } catch (err) {
-        console.error('Failed to send document message:', err);
-        const auditLog = {
-            timestamp: new Date().toISOString(),
-            sessionId: req.sessionId,
-            to: req.body.to,
-            type: 'document',
-            status: 'failed',
-            error: String(err?.message || err)
-        };
-        storeSentMessage(auditLog);
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
+}
 
 // Socket.io connection
 io.on('connection', (socket) => {
