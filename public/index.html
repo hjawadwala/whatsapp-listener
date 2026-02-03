@@ -837,8 +837,8 @@ curl -X POST http://localhost:3000/api/messages/send \
             });
         }
 
-        function handleLogout() {
-            if (confirm('Are you sure you want to logout?')) {
+        function handleLogout(skipConfirm = false) {
+            if (skipConfirm || confirm('Are you sure you want to logout?')) {
                 localStorage.removeItem('adminToken');
                 adminToken = null;
                 showLoginPage();
@@ -976,7 +976,7 @@ curl -X POST http://localhost:3000/api/messages/send \
             })
                 .then(res => {
                     if (res.status === 401) {
-                        handleLogout();
+                        handleLogout(true);
                         throw new Error('Session expired');
                     }
                     return res.json();
