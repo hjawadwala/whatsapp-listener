@@ -365,12 +365,122 @@
             border-radius: 6px;
             margin-bottom: 20px;
         }
+
+        .login-container {
+            max-width: 400px;
+            margin: 50px auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            text-align: center;
+        }
+
+        .login-container h1 {
+            margin-bottom: 30px;
+            color: #333;
+        }
+
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .login-form input {
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .login-form input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .login-btn {
+            background: #25D366;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .login-btn:hover {
+            background: #128C7E;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(37, 211, 102, 0.4);
+        }
+
+        .login-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .login-error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            display: none;
+            border: 1px solid #f5c6cb;
+        }
+
+        .logout-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+            margin-left: 10px;
+        }
+
+        .logout-btn:hover {
+            background: #c82333;
+        }
+
+        .login-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e9ecef;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🔗 WhatsApp Multi-Session Manager</h1>
-        <p class="subtitle">Manage multiple WhatsApp connections from a single dashboard</p>
+    <div id="loginPage" class="login-container">
+        <h1>🔐 WhatsApp Manager</h1>
+        <p style="color: #666; margin-bottom: 30px;">Sign in to manage sessions</p>
+        <div id="loginError" class="login-error"></div>
+        <form class="login-form" onsubmit="handleLogin(event)">
+            <input type="text" id="username" placeholder="Username" required autocomplete="username">
+            <input type="password" id="password" placeholder="Password" required autocomplete="current-password">
+            <button type="submit" class="login-btn" id="loginBtn">Sign In</button>
+        </form>
+    </div>
+
+    <div id="mainPage" class="container" style="display: none;">
+        <div class="login-header">
+            <div>
+                <h1>🔗 WhatsApp Multi-Session Manager</h1>
+                <p class="subtitle">Manage multiple WhatsApp connections from a single dashboard</p>
+            </div>
+            <button class="logout-btn" onclick="handleLogout()">🚪 Logout</button>
+        </div>
 
         <div class="tabs">
             <button class="tab-btn active" onclick="switchTab('sessions')">📱 Sessions</button>
@@ -629,6 +739,83 @@ curl -X POST http://localhost:3000/api/messages/send \
         const socket = io();
         let currentSessionId = null;
         let currentToken = null;
+        let adminToken = localStorage.getItem('adminToken');
+
+        // Check if user is logged in on page load
+        window.addEventListener('load', () => {
+            if (adminToken) {
+                showMainPage();
+                loadSessions();
+            } else {
+                showLoginPage();
+            }
+        });
+
+        function showLoginPage() {
+            document.getElementById('loginPage').style.display = 'block';
+            document.getElementById('mainPage').style.display = 'none';
+        }
+
+        function showMainPage() {
+            document.getElementById('loginPage').style.display = 'none';
+            document.getElementById('mainPage').style.display = 'block';
+        }
+
+        function handleLogin(event) {
+            event.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const loginBtn = document.getElementById('loginBtn');
+            const loginError = document.getElementById('loginError');
+
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = 'Signing in<span class="loading"></span>';
+            loginError.style.display = 'none';
+
+            fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    adminToken = data.token;
+                    localStorage.setItem('adminToken', adminToken);
+                    document.getElementById('username').value = '';
+                    document.getElementById('password').value = '';
+                    showMainPage();
+                    loadSessions();
+                } else {
+                    loginError.textContent = data.error || 'Login failed';
+                    loginError.style.display = 'block';
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = 'Sign In';
+                }
+            })
+            .catch(err => {
+                console.error('Login error:', err);
+                loginError.textContent = 'Network error. Please try again.';
+                loginError.style.display = 'block';
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = 'Sign In';
+            });
+        }
+
+        function handleLogout() {
+            if (confirm('Are you sure you want to logout?')) {
+                localStorage.removeItem('adminToken');
+                adminToken = null;
+                showLoginPage();
+            }
+        }
+
+        function getAuthHeaders() {
+            return {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${adminToken}`
+            };
+        }
 
         function switchTab(tabName) {
             // Hide all tabs
@@ -660,7 +847,10 @@ curl -X POST http://localhost:3000/api/messages/send \
                 return;
             }
             
-            fetch(`/api/sessions/${sessionId}/refresh-token`, { method: 'POST' })
+            fetch(`/api/sessions/${sessionId}/refresh-token`, {
+                method: 'POST',
+                headers: getAuthHeaders()
+            })
                 .then(res => res.json())
                 .then(data => {
                     if (data.success) {
@@ -687,7 +877,10 @@ curl -X POST http://localhost:3000/api/messages/send \
             btn.disabled = true;
             btn.innerHTML = 'Connecting<span class="loading"></span>';
             
-            fetch('/api/sessions/create', { method: 'POST' })
+            fetch('/api/sessions/create', {
+                method: 'POST',
+                headers: getAuthHeaders()
+            })
                 .then(res => res.json())
                 .then(data => {
                     if (data.success) {
@@ -743,8 +936,16 @@ curl -X POST http://localhost:3000/api/messages/send \
         }
 
         function loadSessions() {
-            fetch('/api/sessions')
-                .then(res => res.json())
+            fetch('/api/sessions', {
+                headers: getAuthHeaders()
+            })
+                .then(res => {
+                    if (res.status === 401) {
+                        handleLogout();
+                        throw new Error('Session expired');
+                    }
+                    return res.json();
+                })
                 .then(data => {
                     const tbody = document.getElementById('sessionsBody');
                     
@@ -787,7 +988,10 @@ curl -X POST http://localhost:3000/api/messages/send \
 
         function deleteSession(sessionId) {
             if (confirm('Are you sure you want to delete this session?')) {
-                fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
+                fetch(`/api/sessions/${sessionId}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                })
                     .then(res => res.json())
                     .then(data => {
                         if (data.success) {
@@ -799,11 +1003,11 @@ curl -X POST http://localhost:3000/api/messages/send \
             }
         }
 
-        // Load sessions on page load
-        loadSessions();
-        
+        // Load sessions on page load (handled in load event)
         // Refresh sessions every 10 seconds
-        setInterval(loadSessions, 10000);
+        setInterval(() => {
+            if (adminToken) loadSessions();
+        }, 10000);
     </script>
 </body>
 </html>

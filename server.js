@@ -22,6 +22,7 @@ app.use('/multimedia', express.static('multimedia'));
 const sessions = new Map();
 const sessionsFile = path.join(__dirname, 'data', 'sessions.json');
 const sessionTokens = new Map(); // Store session tokens
+const adminTokens = new Set(); // Store valid admin login tokens
 
 // Helper functions
 function ensureDir(dirPath) {
@@ -131,6 +132,20 @@ function validateToken(req, res, next) {
 
     req.sessionId = sessionId;
     req.session = sessions.get(sessionId);
+    next();
+}
+
+function validateAdminToken(req, res, next) {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+        return res.status(401).json({ success: false, error: 'Missing authorization token' });
+    }
+
+    if (!adminTokens.has(token)) {
+        return res.status(401).json({ success: false, error: 'Invalid or expired admin token' });
+    }
+
+    req.adminToken = token;
     next();
 }
 
@@ -403,7 +418,38 @@ async function startWhatsAppSession(sessionId, existingToken = null) {
 }
 
 // API Routes
-app.post('/api/sessions/create', async (req, res) => {
+
+// Login endpoint
+app.post('/api/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        
+        if (!username || !password) {
+            return res.status(400).json({ success: false, error: 'Missing username or password' });
+        }
+
+        const appUsername = process.env.APP_USERNAME || 'admin';
+        const appPassword = process.env.APP_PASSWORD || 'password123';
+
+        if (username === appUsername && password === appPassword) {
+            // Generate admin token
+            const adminToken = crypto.randomBytes(32).toString('hex');
+            adminTokens.add(adminToken);
+
+            console.log('Admin login successful');
+            res.json({ success: true, token: adminToken });
+        } else {
+            console.warn('Failed login attempt with invalid credentials');
+            res.status(401).json({ success: false, error: 'Invalid username or password' });
+        }
+    } catch (err) {
+        console.error('Login error:', err);
+        res.status(500).json({ success: false, error: 'Login failed' });
+    }
+});
+
+// Protected session creation endpoint
+app.post('/api/sessions/create', validateAdminToken, async (req, res) => {
     try {
         const sessionId = uuidv4();
         await startWhatsAppSession(sessionId);
@@ -415,7 +461,7 @@ app.post('/api/sessions/create', async (req, res) => {
     }
 });
 
-app.get('/api/sessions', (req, res) => {
+app.get('/api/sessions', validateAdminToken, (req, res) => {
     const sessionList = Array.from(sessions.entries()).map(([id, session]) => ({
         sessionId: id,
         phoneNumber: session.phoneNumber,
@@ -426,7 +472,7 @@ app.get('/api/sessions', (req, res) => {
     res.json({ sessions: sessionList });
 });
 
-app.post('/api/sessions/:sessionId/refresh-token', (req, res) => {
+app.post('/api/sessions/:sessionId/refresh-token', validateAdminToken, (req, res) => {
     try {
         const { sessionId } = req.params;
         const session = sessions.get(sessionId);
@@ -451,7 +497,7 @@ app.post('/api/sessions/:sessionId/refresh-token', (req, res) => {
     }
 });
 
-app.delete('/api/sessions/:sessionId', async (req, res) => {
+app.delete('/api/sessions/:sessionId', validateAdminToken, async (req, res) => {
     try {
         const { sessionId } = req.params;
         const session = sessions.get(sessionId);
