@@ -769,11 +769,22 @@ app.post('/api/messages/send', validateToken, async (req, res) => {
 
         try {
             if (type === 'text') {
-                // Process escape sequences in message (convert \\n to actual newlines)
-                const processedMessage = message.replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t');
+                // Process escape sequences in message properly
+                // Handle both JSON-encoded and literal backslash-n sequences
+                let processedMessage = String(message);
+                // Replace literal \n with actual newline
+                processedMessage = processedMessage.replace(/\\n/g, '\n');
+                processedMessage = processedMessage.replace(/\\r/g, '\r');
+                processedMessage = processedMessage.replace(/\\t/g, '\t');
+                // Also handle unicode escape sequences if needed
+                processedMessage = processedMessage.replace(/\\u([0-9a-fA-F]{4})/g, (match, hex) => {
+                    return String.fromCharCode(parseInt(hex, 16));
+                });
+                
                 result = await sock.sendMessage(jid, { text: processedMessage });
                 auditLog.messageLength = processedMessage.length;
-                console.log(`[${sessionId}] Text message sent to ${to}:`, processedMessage);
+                console.log(`[${sessionId}] Text message sent to ${to}:`);
+                console.log(processedMessage);
             } else if (type === 'image') {
                 const imageData = await fetchMediaData(mediaUrl);
                 result = await sock.sendMessage(jid, {
