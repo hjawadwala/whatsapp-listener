@@ -787,22 +787,26 @@ app.post('/api/messages/send', validateToken, async (req, res) => {
                 console.log(processedMessage);
             } else if (type === 'image') {
                 const imageData = await fetchMediaData(mediaUrl);
+                // Process escape sequences in caption
+                let processedCaption = message ? String(message).replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t') : '';
                 result = await sock.sendMessage(jid, {
                     image: imageData,
-                    caption: message || ''
+                    caption: processedCaption
                 });
                 auditLog.mediaUrl = mediaUrl;
-                auditLog.caption = message || '';
+                auditLog.caption = processedCaption;
                 console.log(`[${sessionId}] Image message sent to ${to}`);
             } else if (type === 'video') {
                 const videoData = await fetchMediaData(mediaUrl);
+                // Process escape sequences in caption
+                let processedCaption = message ? String(message).replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t') : '';
                 result = await sock.sendMessage(jid, {
                     video: videoData,
-                    caption: message || '',
+                    caption: processedCaption,
                     mimetype: 'video/mp4'
                 });
                 auditLog.mediaUrl = mediaUrl;
-                auditLog.caption = message || '';
+                auditLog.caption = processedCaption;
                 console.log(`[${sessionId}] Video message sent to ${to}`);
             } else if (type === 'document') {
                 const documentData = await fetchMediaData(mediaUrl);
@@ -814,15 +818,17 @@ app.post('/api/messages/send', validateToken, async (req, res) => {
                         detectedFileName = path.basename(mediaUrl);
                     }
                 }
+                // Process escape sequences in caption
+                let processedCaption = message ? String(message).replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t') : '';
                 result = await sock.sendMessage(jid, {
                     document: documentData,
                     fileName: detectedFileName,
-                    caption: message || '',
+                    caption: processedCaption,
                     mimetype: 'application/octet-stream'
                 });
                 auditLog.mediaUrl = mediaUrl;
                 auditLog.fileName = detectedFileName;
-                auditLog.caption = message || '';
+                auditLog.caption = processedCaption;
                 console.log(`[${sessionId}] Document message sent to ${to}`);
             }
 
