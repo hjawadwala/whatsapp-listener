@@ -787,10 +787,45 @@ curl -X POST http://localhost:3000/api/messages/send \
                     showMainPage();
                     loadSessions();
                 } else {
-                    loginError.textContent = data.error || 'Login failed';
+                    let errorMessage = data.error || 'Login failed';
+                    
+                    // Add remaining attempts info if available
+                    if (data.attemptsRemaining !== undefined) {
+                        errorMessage += ` (${data.attemptsRemaining} ${data.attemptsRemaining === 1 ? 'attempt' : 'attempts'} remaining)`;
+                    }
+                    
+                    // Add lockout info if available
+                    if (data.blockedUntil) {
+                        const minutes = Math.ceil(data.blockedUntil / 60);
+                        errorMessage += ` - Locked until then.`;
+                    }
+                    
+                    loginError.textContent = errorMessage;
                     loginError.style.display = 'block';
-                    loginBtn.disabled = false;
-                    loginBtn.innerHTML = 'Sign In';
+                    
+                    // Disable form temporarily if rate limited (429 error)
+                    if (data.blockedUntil) {
+                        const remainingSeconds = data.blockedUntil;
+                        loginBtn.disabled = true;
+                        
+                        // Countdown timer
+                        let countdown = remainingSeconds;
+                        const countdownInterval = setInterval(() => {
+                            const minutes = Math.ceil(countdown / 60);
+                            loginBtn.innerHTML = `Locked for ${minutes}m ${countdown % 60}s`;
+                            
+                            countdown--;
+                            if (countdown < 0) {
+                                clearInterval(countdownInterval);
+                                loginBtn.disabled = false;
+                                loginBtn.innerHTML = 'Sign In';
+                                loginError.style.display = 'none';
+                            }
+                        }, 1000);
+                    } else {
+                        loginBtn.disabled = false;
+                        loginBtn.innerHTML = 'Sign In';
+                    }
                 }
             })
             .catch(err => {

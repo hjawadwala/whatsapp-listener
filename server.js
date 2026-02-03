@@ -24,9 +24,131 @@ const sessionsFile = path.join(__dirname, 'data', 'sessions.json');
 const sessionTokens = new Map(); // Store session tokens
 const adminTokens = new Set(); // Store valid admin login tokens
 
+// IP-based rate limiting and blocking
+const loginAttempts = new Map(); // Track login attempts per IP: { ip: { count: 0, firstAttemptTime: 0 } }
+const blockedIPs = new Map(); // Track blocked IPs: { ip: blockedUntilTimestamp }
+const blockedIPsFile = path.join(__dirname, 'data', 'blocked-ips.json');
+
+// Security configuration from environment
+const MAX_LOGIN_ATTEMPTS = parseInt(process.env.MAX_LOGIN_ATTEMPTS || '5');
+const LOGIN_LOCKOUT_DURATION = parseInt(process.env.LOGIN_LOCKOUT_DURATION || '86400000'); // 24 hours in ms
+
 // Helper functions
 function ensureDir(dirPath) {
     if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+}
+
+// Save blocked IPs to file
+function saveBlockedIPs() {
+    try {
+        ensureDir(path.dirname(blockedIPsFile));
+        const blockedData = Array.from(blockedIPs.entries()).map(([ip, blockedUntil]) => ({
+            ip,
+            blockedUntil,
+            blockedAt: new Date(blockedUntil - LOGIN_LOCKOUT_DURATION).toISOString()
+        }));
+        fs.writeFileSync(blockedIPsFile, JSON.stringify(blockedData, null, 2));
+        console.log(`[SECURITY] Saved ${blockedData.length} blocked IP(s) to file`);
+    } catch (err) {
+        console.error('[SECURITY] Failed to save blocked IPs:', err);
+    }
+}
+
+// Load blocked IPs from file
+function loadBlockedIPs() {
+    try {
+        if (fs.existsSync(blockedIPsFile)) {
+            const data = JSON.parse(fs.readFileSync(blockedIPsFile, 'utf8'));
+            const now = Date.now();
+            let activeBlocks = 0;
+            let expiredBlocks = 0;
+            
+            data.forEach(entry => {
+                if (entry.blockedUntil > now) {
+                    blockedIPs.set(entry.ip, entry.blockedUntil);
+                    activeBlocks++;
+                } else {
+                    expiredBlocks++;
+                }
+            });
+            
+            if (activeBlocks > 0) {
+                console.log(`[SECURITY] Loaded ${activeBlocks} active blocked IP(s) from file`);
+            }
+            if (expiredBlocks > 0) {
+                console.log(`[SECURITY] Removed ${expiredBlocks} expired block(s)`);
+                saveBlockedIPs(); // Update file to remove expired blocks
+            }
+        }
+    } catch (err) {
+        console.error('[SECURITY] Failed to load blocked IPs:', err);
+    }
+}
+
+// Get client IP address
+function getClientIP(req) {
+    return req.headers['x-forwarded-for']?.split(',')[0].trim() || 
+           req.connection.remoteAddress || 
+           req.socket.remoteAddress || 
+           '0.0.0.0';
+}
+
+// Check if IP is blocked
+function isIPBlocked(ip) {
+    if (!blockedIPs.has(ip)) return false;
+    
+    const blockedUntil = blockedIPs.get(ip);
+    if (Date.now() > blockedUntil) {
+        // Block period has expired
+        blockedIPs.delete(ip);
+        loginAttempts.delete(ip);
+        saveBlockedIPs(); // Update file
+        return false;
+    }
+    return true;
+}
+
+// Get remaining lockout time in seconds
+function getRemainingLockoutTime(ip) {
+    if (!blockedIPs.has(ip)) return 0;
+    const blockedUntil = blockedIPs.get(ip);
+    const remaining = blockedUntil - Date.now();
+    return Math.ceil(remaining / 1000);
+}
+
+// Record failed login attempt
+function recordFailedAttempt(ip) {
+    const now = Date.now();
+    
+    if (!loginAttempts.has(ip)) {
+        loginAttempts.set(ip, { count: 1, firstAttemptTime: now });
+    } else {
+        const attempts = loginAttempts.get(ip);
+        attempts.count += 1;
+        
+        // Reset counter if more than 1 hour has passed since first attempt
+        if (now - attempts.firstAttemptTime > 3600000) {
+            loginAttempts.set(ip, { count: 1, firstAttemptTime: now });
+        }
+    }
+    
+    const currentAttempts = loginAttempts.get(ip);
+    
+    // Block IP if max attempts exceeded
+    if (currentAttempts.count >= MAX_LOGIN_ATTEMPTS) {
+        const blockedUntil = now + LOGIN_LOCKOUT_DURATION;
+        blockedIPs.set(ip, blockedUntil);
+        saveBlockedIPs(); // Save to file
+        console.warn(`[SECURITY] IP ${ip} blocked until ${new Date(blockedUntil).toISOString()} after ${currentAttempts.count} failed attempts`);
+        return { blocked: true, remainingTime: LOGIN_LOCKOUT_DURATION / 1000 };
+    }
+    
+    return { blocked: false, attemptsRemaining: MAX_LOGIN_ATTEMPTS - currentAttempts.count };
+}
+
+// Reset login attempts for IP on successful login
+function resetLoginAttempts(ip) {
+    loginAttempts.delete(ip);
 }
 
 // Download and save media from WhatsApp message
@@ -422,25 +544,56 @@ async function startWhatsAppSession(sessionId, existingToken = null) {
 // Login endpoint
 app.post('/api/login', async (req, res) => {
     try {
+        const clientIP = getClientIP(req);
         const { username, password } = req.body;
         
         if (!username || !password) {
             return res.status(400).json({ success: false, error: 'Missing username or password' });
         }
 
+        // Check if IP is blocked
+        if (isIPBlocked(clientIP)) {
+            const remainingTime = getRemainingLockoutTime(clientIP);
+            console.warn(`[SECURITY] Login attempt from blocked IP ${clientIP}. Remaining lockout: ${remainingTime}s`);
+            return res.status(429).json({ 
+                success: false, 
+                error: `Too many failed attempts. Please try again in ${remainingTime} seconds.`,
+                blockedUntil: remainingTime
+            });
+        }
+
         const appUsername = process.env.APP_USERNAME || 'admin';
         const appPassword = process.env.APP_PASSWORD || 'password123';
 
         if (username === appUsername && password === appPassword) {
+            // Reset login attempts on successful login
+            resetLoginAttempts(clientIP);
+            
             // Generate admin token
             const adminToken = crypto.randomBytes(32).toString('hex');
             adminTokens.add(adminToken);
 
-            console.log('Admin login successful');
+            console.log(`[SECURITY] Successful login from IP ${clientIP}`);
             res.json({ success: true, token: adminToken });
         } else {
-            console.warn('Failed login attempt with invalid credentials');
-            res.status(401).json({ success: false, error: 'Invalid username or password' });
+            // Record failed attempt
+            const failureResult = recordFailedAttempt(clientIP);
+            
+            if (failureResult.blocked) {
+                console.warn(`[SECURITY] IP ${clientIP} blocked after ${MAX_LOGIN_ATTEMPTS} failed attempts`);
+                return res.status(429).json({ 
+                    success: false, 
+                    error: `Too many failed attempts. Account locked for ${failureResult.remainingTime} seconds.`,
+                    blockedUntil: failureResult.remainingTime
+                });
+            }
+            
+            console.warn(`[SECURITY] Failed login attempt from IP ${clientIP}. Attempts remaining: ${failureResult.attemptsRemaining}`);
+            res.status(401).json({ 
+                success: false, 
+                error: 'Invalid username or password',
+                attemptsRemaining: failureResult.attemptsRemaining
+            });
         }
     } catch (err) {
         console.error('Login error:', err);
@@ -522,6 +675,54 @@ app.delete('/api/sessions/:sessionId', validateAdminToken, async (req, res) => {
     } catch (err) {
         console.error('Failed to delete session:', err);
         res.json({ success: false, error: err.message });
+    }
+});
+
+// Security management endpoints
+app.get('/api/security/blocked-ips', validateAdminToken, (req, res) => {
+    try {
+        const now = Date.now();
+        const blockedList = Array.from(blockedIPs.entries()).map(([ip, blockedUntil]) => ({
+            ip,
+            blockedUntil: new Date(blockedUntil).toISOString(),
+            remainingSeconds: Math.ceil((blockedUntil - now) / 1000),
+            blockedAt: new Date(blockedUntil - LOGIN_LOCKOUT_DURATION).toISOString()
+        }));
+        
+        res.json({ 
+            success: true, 
+            blockedIPs: blockedList,
+            count: blockedList.length 
+        });
+    } catch (err) {
+        console.error('Failed to fetch blocked IPs:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.delete('/api/security/unblock/:ip', validateAdminToken, (req, res) => {
+    try {
+        const { ip } = req.params;
+        
+        if (!blockedIPs.has(ip)) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'IP not found in blocked list' 
+            });
+        }
+        
+        blockedIPs.delete(ip);
+        loginAttempts.delete(ip);
+        saveBlockedIPs();
+        
+        console.log(`[SECURITY] Admin manually unblocked IP ${ip}`);
+        res.json({ 
+            success: true, 
+            message: `IP ${ip} has been unblocked` 
+        });
+    } catch (err) {
+        console.error('Failed to unblock IP:', err);
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -661,5 +862,6 @@ const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => {
     console.log(`🚀 WhatsApp Multi-Session Server running on http://localhost:${PORT}`);
     console.log(`📱 Open your browser to manage sessions`);
+    loadBlockedIPs();
     loadSessions();
 });
