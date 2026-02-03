@@ -8,6 +8,39 @@ function ensureDir(dirPath) {
     if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
 }
 
+// Convert a WhatsApp JID to a plain phone number string
+function jidToNumber(jid) {
+    if (!jid) return null;
+    const bare = String(jid).split('@')[0];
+    const user = bare.split(':')[0];
+
+    // Try reverse LID -> phone mapping from auth_info if present
+    try {
+        const mapPath = path.join(process.cwd(), 'auth_info', `lid-mapping-${user}_reverse.json`);
+        if (fs.existsSync(mapPath)) {
+            const raw = fs.readFileSync(mapPath, 'utf8');
+            const val = JSON.parse(raw);
+            if (val && typeof val === 'string') return val.trim();
+        }
+    } catch (e) {
+        // fall back to user as-is
+    }
+
+    // Fall back to returning the user id as number-like string
+    return user || null;
+}
+
+function storePayload(record) {
+    try {
+        const dir = path.join(process.cwd(), 'data');
+        ensureDir(dir);
+        const file = path.join(dir, 'payloads.log');
+        fs.appendFileSync(file, JSON.stringify(record) + '\n', 'utf8');
+    } catch (e) {
+        console.error('Failed to store payload:', e);
+    }
+}
+
 function storeMessage(record) {
     try {
         const dir = path.join(process.cwd(), 'data');
@@ -148,6 +181,28 @@ async function startSocket() {
         // Remove printQRInTerminal entirely
     });
 
+    // Will hold the connected account's phone number (phone_number_id)
+    let accountNumber = null;
+
+    function resolveSelfNumber() {
+        try {
+            const jid = sock?.user?.id || sock?.user?.jid || null;
+            const fromJid = jidToNumber(jid);
+            if (fromJid) return fromJid;
+        } catch {}
+        // Fallback: derive from auth_info device-list-<number>.json file name
+        try {
+            const dir = path.join(process.cwd(), 'auth_info');
+            const files = fs.readdirSync(dir);
+            const entry = files.find(f => /^device-list-(\d+)\.json$/.test(f));
+            if (entry) {
+                const m = entry.match(/^device-list-(\d+)\.json$/);
+                if (m && m[1]) return m[1];
+            }
+        } catch {}
+        return null;
+    }
+
     sock.ev.on('creds.update', saveCreds);
 
     // Handle connection updates + QR
@@ -166,6 +221,8 @@ async function startSocket() {
             if (shouldReconnect) startSocket();
         } else if (connection === 'open') {
             console.log('WhatsApp connected!');
+            accountNumber = resolveSelfNumber();
+            console.log('Connected account phone_number_id:', accountNumber, 'self jid:', sock?.user?.id);
         }
     });
 
@@ -176,23 +233,85 @@ async function startSocket() {
             const details = extractMessageDetails(msg);
             const sender = details.from;
 
-            console.log(`New ${details.type} from ${sender}: ${details.text || details.caption || '[no text]'}`);
+            // If group, actual sender is in participant; otherwise it's remoteJid
+            const participantJid = msg.key?.participant || msg.participant;
+            const effectiveJid = (sender || '').endsWith('@g.us') ? participantJid : sender;
+            const fromNumber = jidToNumber(effectiveJid);
 
-            // Store message locally instead of sending to API
-            storeMessage(details);
+            console.log(`New ${details.type} from ${fromNumber || sender} (jid: ${effectiveJid}): ${details.text || details.caption || '[no text]'}`);
 
-            // API call commented as requested
-            // try {
-            //     const response = await fetch('https://your-api-endpoint.com/leads', {
-            //         method: 'POST',
-            //         headers: { 'Content-Type': 'application/json' },
-            //         body: JSON.stringify(details)
-            //     });
-            //     if (!response.ok) throw new Error('API error');
-            //     console.log('API triggered successfully');
-            // } catch (err) {
-            //     console.error('API trigger failed:', err);
-            // }
+            // Store message locally
+            storeMessage({ ...details, fromNumber });
+
+            // Send text messages to API
+            if (details.type === 'conversation' || details.type === 'extendedTextMessage') {
+                try {
+                    if (!fromNumber) {
+                        console.warn('Skipping API send: could not resolve phone number from JID:', sender, participantJid);
+                        return;
+                    }
+                    const payload = {
+                        messages: [
+                            {
+                                id: details.id,
+                                phone_number_id: accountNumber || '',
+                                from: fromNumber,
+                                text: {
+                                    body: details.text
+                                },
+                                type: 'text'
+                            }
+                        ]
+                    };
+
+                    // Debug: log and persist the payload prior to sending
+                    console.log('Sending payload to API:', JSON.stringify(payload));
+                    storePayload({
+                        direction: 'outbound',
+                        url: 'https://neptuneerp.com/webhooks/whatsapp/webhook.php',
+                        timestamp: Date.now(),
+                        payload
+                    });
+
+                    const response = await fetch('https://neptuneerp.com/webhooks/whatsapp/webhook.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const text = await (async () => { try { return await response.text(); } catch { return ''; } })();
+                        console.error('API error:', response.status, response.statusText, text);
+                        storePayload({
+                            direction: 'response',
+                            url: 'https://neptuneerp.com/webhooks/whatsapp/webhook.php',
+                            timestamp: Date.now(),
+                            status: response.status,
+                            statusText: response.statusText,
+                            body: text
+                        });
+                    } else {
+                        const text = await (async () => { try { return await response.text(); } catch { return ''; } })();
+                        console.log('API success:', response.status, response.statusText, text);
+                        storePayload({
+                            direction: 'response',
+                            url: 'https://neptuneerp.com/webhooks/whatsapp/webhook.php',
+                            timestamp: Date.now(),
+                            status: response.status,
+                            statusText: response.statusText,
+                            body: text
+                        });
+                    }
+                } catch (err) {
+                    console.error('API request failed:', err);
+                    storePayload({
+                        direction: 'error',
+                        url: 'https://neptuneerp.com/webhooks/whatsapp/webhook.php',
+                        timestamp: Date.now(),
+                        error: String(err && err.stack ? err.stack : err)
+                    });
+                }
+            }
         }
     });
 }

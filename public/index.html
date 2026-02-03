@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Multi-Session Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .connect-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            background: #25D366;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            background: #128C7E;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(37, 211, 102, 0.4);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #qrSection {
+            margin-top: 20px;
+            text-align: center;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+        }
+
+        #qrCode {
+            max-width: 300px;
+            margin: 20px auto;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .status-message {
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th {
+            background: #667eea;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 14px;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-connected {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-connecting {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 15px;
+            opacity: 0.3;
+        }
+
+        .action-btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-right: 5px;
+            transition: all 0.2s;
+        }
+
+        .btn-delete {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-delete:hover {
+            background: #c82333;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #25D366;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 8px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .tab-btn.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab-btn:hover {
+            color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .token-section {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .token-display {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            word-break: break-all;
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            flex: 1;
+            margin-right: 10px;
+            border: 1px solid #ddd;
+        }
+
+        .btn-copy {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .btn-copy:hover {
+            background: #5568d3;
+        }
+
+        .api-docs {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .api-docs h3 {
+            color: #333;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .api-docs h4 {
+            color: #555;
+            margin-top: 15px;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .api-docs code {
+            background: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            border: 1px solid #ddd;
+            font-family: 'Courier New', monospace;
+        }
+
+        .api-docs pre {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            overflow-x: auto;
+            margin: 10px 0;
+            font-size: 12px;
+        }
+
+        .endpoint {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+            border-left: 4px solid #667eea;
+        }
+
+        .method {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-right: 8px;
+        }
+
+        .method-post {
+            background: #dcf8c1;
+            color: #33691e;
+        }
+
+        .method-get {
+            background: #c5d9f1;
+            color: #1a237e;
+        }
+
+        .copy-success {
+            background: #d4edda;
+            color: #155724;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .token-info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 WhatsApp Multi-Session Manager</h1>
+        <p class="subtitle">Manage multiple WhatsApp connections from a single dashboard</p>
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('sessions')">📱 Sessions</button>
+            <button class="tab-btn" onclick="switchTab('api')">📚 API Docs</button>
+        </div>
+
+        <div id="sessions-tab" class="tab-content active">
+            <div class="connect-section">
+                <button class="btn" id="connectBtn" onclick="initiateConnection()">
+                    + Connect New Session
+                </button>
+                
+                <div id="qrSection" style="display: none;">
+                    <h3>Scan QR Code with WhatsApp</h3>
+                    <img id="qrCode" src="" alt="QR Code">
+                    <div id="statusMessage"></div>
+                    <div id="tokenDisplay" style="display: none; margin-top: 20px;">
+                        <div class="token-info">
+                            <strong>✓ Session Created!</strong>
+                            <p style="margin-top: 8px;">Your authentication token is ready. Use it to send messages via API.</p>
+                        </div>
+                        <div class="token-section">
+                            <div class="token-display" id="newTokenDisplay"></div>
+                            <button class="btn-copy" onclick="copyToken(document.getElementById('newTokenDisplay').textContent)">Copy Token</button>
+                        </div>
+                        <div id="copySuccess" class="copy-success">✓ Token copied to clipboard!</div>
+                    </div>
+                </div>
+            </div>
+
+            <h2>Active Sessions</h2>
+            <div id="sessionsContainer">
+                <table id="sessionsTable">
+                    <thead>
+                        <tr>
+                            <th>Session ID</th>
+                            <th>Mobile Number</th>
+                            <th>Authentication Token</th>
+                            <th>Status</th>
+                            <th>Connected At</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessionsBody">
+                        <tr>
+                            <td colspan="6" class="empty-state">
+                                <svg fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/>
+                                </svg>
+                                <p>No active sessions. Click "Connect New Session" to get started.</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="api-tab" class="tab-content">
+            <div class="api-docs">
+                <h2>📡 API Documentation</h2>
+                <p>Send messages via WhatsApp API using token-based authentication.</p>
+
+                <h3>Authentication</h3>
+                <p>All message endpoints require a Bearer token in the Authorization header:</p>
+                <pre>Authorization: Bearer YOUR_TOKEN_HERE</pre>
+
+                <h3>📤 Endpoints</h3>
+
+                <div class="endpoint">
+                    <span class="method method-post">POST</span>
+                    <code>/api/messages/text</code>
+                    <h4>Send Text Message</h4>
+                    <p><strong>Request:</strong></p>
+                    <pre>{
+  "to": "919876543210",
+  "message": "Hello World!"
+}</pre>
+                    <p><strong>Response:</strong></p>
+                    <pre>{
+  "success": true,
+  "messageId": "3EB0601DAAF2EF6BE85000"
+}</pre>
+                </div>
+
+                <div class="endpoint">
+                    <span class="method method-post">POST</span>
+                    <code>/api/messages/image</code>
+                    <h4>Send Image Message</h4>
+                    <p><strong>Request:</strong></p>
+                    <pre>{
+  "to": "919876543210",
+  "imageUrl": "https://example.com/photo.jpg",
+  "caption": "Check this photo!"
+}</pre>
+                    <p><strong>Parameters:</strong></p>
+                    <ul style="margin-left: 20px;">
+                        <li><code>to</code> - Phone number (required)</li>
+                        <li><code>imageUrl</code> - Image URL or local path (required)</li>
+                        <li><code>caption</code> - Image caption (optional)</li>
+                    </ul>
+                </div>
+
+                <div class="endpoint">
+                    <span class="method method-post">POST</span>
+                    <code>/api/messages/video</code>
+                    <h4>Send Video Message</h4>
+                    <p><strong>Request:</strong></p>
+                    <pre>{
+  "to": "919876543210",
+  "videoUrl": "https://example.com/video.mp4",
+  "caption": "Watch this!"
+}</pre>
+                    <p><strong>Parameters:</strong></p>
+                    <ul style="margin-left: 20px;">
+                        <li><code>to</code> - Phone number (required)</li>
+                        <li><code>videoUrl</code> - Video URL or local path (required)</li>
+                        <li><code>caption</code> - Video caption (optional)</li>
+                    </ul>
+                </div>
+
+                <div class="endpoint">
+                    <div class="method-post">POST</div>
+                    <code>/api/messages/document</code>
+                    <p>Send a document (PDF, DOC, TXT, etc.)</p>
+                    <strong>Request Body:</strong>
+                    <ul style="margin-left: 20px;">
+                        <li><code>to</code> - Recipient's WhatsApp number (required)</li>
+                        <li><code>documentUrl</code> - URL or local path to document (required)</li>
+                        <li><code>fileName</code> - Custom filename (optional, auto-detected from URL/path)</li>
+                        <li><code>caption</code> - Document caption (optional)</li>
+                    </ul>
+                </div>
+
+                <h3>💡 Usage Examples</h3>
+
+                <h4>JavaScript / Node.js</h4>
+                <pre>const token = 'YOUR_TOKEN_HERE';
+
+async function sendMessage(to, message) {
+  const response = await fetch('http://localhost:3000/api/messages/text', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ to, message })
+  });
+  return response.json();
+}
+
+await sendMessage('919876543210', 'Hello!');</pre>
+
+                <h4>Python</h4>
+                <pre>import requests
+
+token = 'YOUR_TOKEN_HERE'
+headers = {
+    'Authorization': f'Bearer {token}',
+    'Content-Type': 'application/json'
+}
+
+response = requests.post(
+    'http://localhost:3000/api/messages/text',
+    headers=headers,
+    json={'to': '919876543210', 'message': 'Hello!'}
+)
+print(response.json())</pre>
+
+                <h4>cURL</h4>
+                <pre>curl -X POST http://localhost:3000/api/messages/text \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -d '{"to": "919876543210", "message": "Hello!"}'</pre>
+
+                <h3>📋 Phone Number Format</h3>
+                <p>Always use country code + phone number (no + or spaces)</p>
+                <ul style="margin-left: 20px;">
+                    <li>India: <code>919876543210</code></li>
+                    <li>USA: <code>12345678900</code></li>
+                    <li>UK: <code>447911123456</code></li>
+                </ul>
+
+                <h3>ℹ️ Status Codes</h3>
+                <ul style="margin-left: 20px;">
+                    <li><code>200</code> - Message sent successfully</li>
+                    <li><code>400</code> - Bad request (missing fields)</li>
+                    <li><code>401</code> - Unauthorized (invalid token)</li>
+                    <li><code>500</code> - Server error</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let currentSessionId = null;
+        let currentToken = null;
+
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.getElementById('sessions-tab').classList.remove('active');
+            document.getElementById('api-tab').classList.remove('active');
+            
+            // Remove active class from all buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            
+            // Show selected tab
+            document.getElementById(tabName + '-tab').classList.add('active');
+            
+            // Add active class to clicked button
+            event.target.classList.add('active');
+        }
+
+        function copyToken(token) {
+            navigator.clipboard.writeText(token).then(() => {
+                const successEl = document.getElementById('copySuccess');
+                successEl.style.display = 'block';
+                setTimeout(() => {
+                    successEl.style.display = 'none';
+                }, 2000);
+            });
+        }
+
+        function refreshToken(sessionId) {
+            if (!confirm('Are you sure you want to refresh the token? The old token will no longer work.')) {
+                return;
+            }
+            
+            fetch(`/api/sessions/${sessionId}/refresh-token`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        const msg = document.createElement('div');
+                        msg.textContent = 'Token refreshed successfully!';
+                        msg.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #4CAF50; color: white; padding: 12px 24px; border-radius: 4px; z-index: 10000;';
+                        document.body.appendChild(msg);
+                        setTimeout(() => msg.remove(), 2000);
+                        
+                        // Reload sessions to show new token
+                        loadSessions();
+                    } else {
+                        alert('Failed to refresh token: ' + data.error);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error refreshing token:', err);
+                    alert('Failed to refresh token');
+                });
+        }
+
+        function initiateConnection() {
+            const btn = document.getElementById('connectBtn');
+            btn.disabled = true;
+            btn.innerHTML = 'Connecting<span class="loading"></span>';
+            
+            fetch('/api/sessions/create', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        currentSessionId = data.sessionId;
+                        currentToken = data.token;
+                        document.getElementById('newTokenDisplay').textContent = data.token;
+                        document.getElementById('tokenDisplay').style.display = 'block';
+                        document.getElementById('qrSection').style.display = 'block';
+                        showStatus('Waiting for QR code...', 'info');
+                    } else {
+                        showStatus('Failed to create session: ' + data.error, 'error');
+                        btn.disabled = false;
+                        btn.innerHTML = '+ Connect New Session';
+                    }
+                })
+                .catch(err => {
+                    showStatus('Error: ' + err.message, 'error');
+                    btn.disabled = false;
+                    btn.innerHTML = '+ Connect New Session';
+                });
+        }
+
+        socket.on('qr', (data) => {
+            if (data.sessionId === currentSessionId) {
+                document.getElementById('qrCode').src = data.qr;
+                showStatus('Scan this QR code with your WhatsApp app', 'info');
+            }
+        });
+
+        socket.on('connected', (data) => {
+            if (data.sessionId === currentSessionId) {
+                showStatus('✓ Connected successfully!', 'success');
+                setTimeout(() => {
+                    document.getElementById('qrSection').style.display = 'none';
+                    document.getElementById('connectBtn').disabled = false;
+                    document.getElementById('connectBtn').innerHTML = '+ Connect New Session';
+                    currentSessionId = null;
+                    loadSessions();
+                }, 2000);
+            } else {
+                loadSessions();
+            }
+        });
+
+        socket.on('disconnected', (data) => {
+            loadSessions();
+        });
+
+        function showStatus(message, type) {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.className = 'status-message status-' + type;
+            statusEl.textContent = message;
+        }
+
+        function loadSessions() {
+            fetch('/api/sessions')
+                .then(res => res.json())
+                .then(data => {
+                    const tbody = document.getElementById('sessionsBody');
+                    
+                    if (data.sessions.length === 0) {
+                        tbody.innerHTML = `
+                            <tr>
+                                <td colspan="6" class="empty-state">
+                                    <svg fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/>
+                                    </svg>
+                                    <p>No active sessions. Click "Connect New Session" to get started.</p>
+                                </td>
+                            </tr>
+                        `;
+                    } else {
+                        tbody.innerHTML = data.sessions.map(session => {
+                            const tokenDisplay = session.token ? session.token.substring(0, 16) + '...' : 'N/A';
+                            return `
+                            <tr>
+                                <td><code style="font-size: 11px;">${session.sessionId.substring(0, 8)}</code></td>
+                                <td>${session.phoneNumber || 'Connecting...'}</td>
+                                <td>
+                                    <div style="display: flex; gap: 5px; align-items: center;">
+                                        <code style="font-size: 11px; background: #f0f0f0; padding: 4px 8px; border-radius: 3px; flex: 1;" id="token-${session.sessionId}">${tokenDisplay}</code>
+                                        <button class="btn-copy" style="padding: 4px 8px; font-size: 11px;" onclick="copyToken('${session.token}')">Copy</button>
+                                        <button class="btn-copy" style="padding: 4px 8px; font-size: 11px; background: #ff9800;" onclick="refreshToken('${session.sessionId}')">🔄</button>
+                                    </div>
+                                </td>
+                                <td><span class="status-badge status-${session.status}">${session.status}</span></td>
+                                <td>${session.connectedAt ? new Date(session.connectedAt).toLocaleString() : '-'}</td>
+                                <td>
+                                    <button class="action-btn btn-delete" onclick="deleteSession('${session.sessionId}')">Delete</button>
+                                </td>
+                            </tr>
+                        `;
+                        }).join('');
+                    }
+                });
+        }
+
+        function deleteSession(sessionId) {
+            if (confirm('Are you sure you want to delete this session?')) {
+                fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            loadSessions();
+                        } else {
+                            alert('Failed to delete session: ' + data.error);
+                        }
+                    });
+            }
+        }
+
+        // Load sessions on page load
+        loadSessions();
+        
+        // Refresh sessions every 10 seconds
+        setInterval(loadSessions, 10000);
+    </script>
+</body>
+</html>

@@ -2,9 +2,10 @@
   "name": "whatsapp-listener",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "node server.js",
+    "old": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -13,8 +14,12 @@
   "type": "commonjs",
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
     "node-fetch": "^2.7.0",
     "pino": "^10.1.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1",
+    "uuid": "^13.0.0"
   }
 }
