@@ -769,9 +769,11 @@ app.post('/api/messages/send', validateToken, async (req, res) => {
 
         try {
             if (type === 'text') {
-                result = await sock.sendMessage(jid, { text: message });
-                auditLog.messageLength = message.length;
-                console.log(`[${sessionId}] Text message sent to ${to}:`, message);
+                // Process escape sequences in message (convert \\n to actual newlines)
+                const processedMessage = message.replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t');
+                result = await sock.sendMessage(jid, { text: processedMessage });
+                auditLog.messageLength = processedMessage.length;
+                console.log(`[${sessionId}] Text message sent to ${to}:`, processedMessage);
             } else if (type === 'image') {
                 const imageData = await fetchMediaData(mediaUrl);
                 result = await sock.sendMessage(jid, {
