@@ -809,7 +809,6 @@ app.post('/api/messages/send', validateToken, async (req, res) => {
                 auditLog.caption = processedCaption;
                 console.log(`[${sessionId}] Video message sent to ${to}`);
             } else if (type === 'document') {
-                const documentData = await fetchMediaData(mediaUrl);
                 let detectedFileName = fileName;
                 if (!detectedFileName) {
                     if (mediaUrl.startsWith('http')) {
@@ -818,13 +817,14 @@ app.post('/api/messages/send', validateToken, async (req, res) => {
                         detectedFileName = path.basename(mediaUrl);
                     }
                 }
+                const { buffer: documentData, mimeType } = await fetchDocumentData(mediaUrl, detectedFileName);
                 // Process escape sequences in caption
                 let processedCaption = message ? String(message).replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t') : '';
                 result = await sock.sendMessage(jid, {
                     document: documentData,
                     fileName: detectedFileName,
                     caption: processedCaption,
-                    mimetype: 'application/octet-stream'
+                    mimetype: mimeType
                 });
                 auditLog.mediaUrl = mediaUrl;
                 auditLog.fileName = detectedFileName;
@@ -865,6 +865,44 @@ async function fetchMediaData(mediaUrl) {
     } else {
         return fs.readFileSync(mediaUrl);
     }
+}
+
+function inferMimeType(fileName) {
+    const ext = path.extname(fileName || '').toLowerCase();
+    const map = {
+        '.pdf': 'application/pdf',
+        '.doc': 'application/msword',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.xls': 'application/vnd.ms-excel',
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.ppt': 'application/vnd.ms-powerpoint',
+        '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        '.txt': 'text/plain',
+        '.csv': 'text/csv',
+        '.zip': 'application/zip'
+    };
+    return map[ext] || 'application/octet-stream';
+}
+
+async function fetchDocumentData(mediaUrl, fileNameHint) {
+    if (mediaUrl.startsWith('http')) {
+        const response = await fetch(mediaUrl);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch media from URL: ${response.status}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        const headerType = response.headers.get('content-type');
+        const cleanHeaderType = headerType ? headerType.split(';')[0].trim() : '';
+        const inferred = inferMimeType(fileNameHint || mediaUrl);
+        const mimeType = cleanHeaderType && cleanHeaderType !== 'application/octet-stream'
+            ? cleanHeaderType
+            : inferred;
+        return { buffer: Buffer.from(arrayBuffer), mimeType };
+    }
+
+    const buffer = fs.readFileSync(mediaUrl);
+    const mimeType = inferMimeType(fileNameHint || mediaUrl);
+    return { buffer, mimeType };
 }
 
 // Socket.io connection
