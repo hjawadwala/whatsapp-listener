@@ -3,8 +3,11 @@ module.exports = {
     {
       name: 'whatsapp-manager',
       script: './server.js',
-      instances: 'max',
-      exec_mode: 'cluster',
+      // This app keeps state in memory and uses Socket.IO + local auth/session files.
+      // Running multiple workers without sticky/shared state causes 400 handshake errors
+      // and duplicated WhatsApp session handling, so keep a single process.
+      instances: 1,
+      exec_mode: 'fork',
       env: {
         NODE_ENV: 'development',
         PORT: 3000
@@ -32,10 +35,6 @@ module.exports = {
       // Graceful shutdown
       kill_timeout: 5000,
       wait_ready: false,
-      
-      // Cluster configuration
-      exec_mode: 'cluster',
-      instances: 'max',
       merge_logs: true,
       
       // Advanced settings

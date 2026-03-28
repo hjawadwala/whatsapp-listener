@@ -6,10 +6,10 @@ A `ecosystem.config.js` file has been created for optimal performance using PM2.
 
 ### Key Performance Features
 
-#### 1. **Cluster Mode**
-- Runs application on all available CPU cores
-- Automatic load balancing across instances
-- Zero-downtime restarts
+#### 1. **Single Instance Mode (Recommended)**
+- Runs one PM2 process (`fork` mode)
+- Prevents Socket.IO 400 handshake issues from non-sticky load balancing
+- Avoids duplicate WhatsApp/Baileys session handling across workers
 
 #### 2. **Memory Management**
 - Max memory limit: 500MB per instance
@@ -40,7 +40,7 @@ npm install
 ### Quick Start Commands
 
 ```bash
-# Start in production mode (cluster mode, all cores)
+# Start in production mode
 npm run start:pm2
 
 # Start in development mode
@@ -145,10 +145,13 @@ node_args: [
 
 #### Number of Instances
 ```javascript
-instances: 4,  // Fixed number
-// OR
-instances: 'max',  // Use all cores (default)
+instances: 1,      // Recommended for this app
+exec_mode: 'fork'
 ```
+
+Using multiple PM2 instances is not recommended here because session/auth data is
+kept in process memory and local files, and Socket.IO is stateful without sticky
+session configuration.
 
 ### Troubleshooting
 

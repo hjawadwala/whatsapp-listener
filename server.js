@@ -12,7 +12,15 @@ const crypto = require('crypto');
 
 const app = express();
 const httpServer = createServer(app);
-const io = new Server(httpServer);
+const io = new Server(httpServer, {
+    // Keep compatibility with older cached Socket.IO clients and reduce handshake failures.
+    allowEIO3: true,
+    cors: {
+        origin: true,
+        credentials: true
+    },
+    transports: ['websocket', 'polling']
+});
 
 app.use(express.json());
 app.use(express.static('public'));
