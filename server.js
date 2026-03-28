@@ -924,8 +924,9 @@ io.on('connection', (socket) => {
 
 // Start server
 const PORT = process.env.PORT || 3000;
-httpServer.listen(PORT, () => {
-    console.log(`🚀 WhatsApp Multi-Session Server running on http://localhost:${PORT}`);
+const HOST = process.env.HOST || '0.0.0.0';
+httpServer.listen(PORT, HOST, () => {
+    console.log(`🚀 WhatsApp Multi-Session Server running on http://${HOST}:${PORT}`);
     console.log(`📱 Open your browser to manage sessions`);
     loadBlockedIPs();
     loadSessions();
